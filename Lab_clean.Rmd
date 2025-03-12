@@ -1,0 +1,252 @@
+---
+title: "Lab_clean"
+author: "Yara Yachnyk"
+date: "2025-03-11"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Function for cross-sectional data for all datasets in period 2019-2025:
+
+```{r}
+library(dplyr)
+library(lubridate)
+library(fastDummies)
+
+clean_and_combine <- function(data_list) {
+  data_cleaned <- data_list %>%
+    bind_rows() %>%
+    distinct() %>%
+    select(-any_of("adjusted_price")) %>%
+    mutate(
+      price = gsub("\\$", "", price),  # Remove $ sign
+      price = gsub(",", "", price),    # Remove commas
+      price = as.numeric(price),       # Convert to numeric
+      date = as.Date(date)             # Convert to Date type
+    ) %>%
+    drop_na() %>%  # Drop missing values
+
+    # Ensure correct date format before grouping
+    mutate(year_month_day = format(date, "%Y-%m-%d")) %>%
+
+    # Group and calculate average price
+    group_by(year_month_day) %>%
+    summarise(avg_price = mean(price, na.rm = TRUE), .groups = "drop") %>%
+    
+    # Add additional date-based variables
+    mutate(
+      month = month(as.Date(year_month_day)),  # Extract month
+      year = year(as.Date(year_month_day)),    # Extract year
+      is_weekend = wday(as.Date(year_month_day), week_start = 1) >= 6  # Weekend indicator
+    ) %>%
+
+    # Create dummy variables for months
+    dummy_cols(select_columns = "month", remove_first_dummy = TRUE)
+
+  return(data_cleaned)
+}
+
+```
+
+Let's upload dataset we will be working with and combine them in proper years:
+
+```{r}
+library(readr)
+
+# year 2024-2025
+X2024_09_24 <- read_csv("data/2024-09-24.csv")
+X2024_06_10 <- read_csv("data/2024-06-10.csv")
+X2024_03_11 <- read_csv("data/2024-03-11.csv")
+
+#year 2023-2024
+X2023_12_12 <- read_csv("data/2023-12-12.csv")
+X2023_09_03 <- read_csv("data/2023-09-03.csv")
+X2023_06_05 <- read_csv("data/2023-06-05.csv")
+X2023_03_09 <- read_csv("data/2023-03-09.csv")
+
+#year 2022-2023
+X2022_09_07 <- read_csv("data/2022-09-07.csv")
+X2022_06_05 <- read_csv("data/2022-06-05.csv")
+X2022_03_08 <- read_csv("data/2022-03-08.csv")
+# datasets per each year
+y_2024_2025 <- list(X2024_09_24, X2024_06_10, X2024_03_11)
+cleaned_2024_2025 <- clean_and_combine(y_2024_2025)
+
+y_2023_2024 <- list(X2023_12_12, X2023_09_03, X2023_06_05, X2023_03_09)
+cleaned_2023_2024 <- clean_and_combine(y_2023_2024)
+
+y_2022_2023 <- list(X2022_09_07, X2022_06_05, X2022_03_08)
+cleaned_2022_2023 <- clean_and_combine(y_2022_2023)
+```
+We split them separately to not overload R software
+
+```{r}
+#year 2019-2022 in 3 separate datasets
+X2021_12_05 <- read_csv("data/2021-12-05.csv")
+X2021_09_07 <- read_csv("data/2021-09-07.csv")
+X2021_06_03 <- read_csv("data/2021-06-03.csv")
+X2021_03_04 <- read_csv("data/2021-03-04.csv")
+X2021_02_10 <- read_csv("data/2021-02-10.csv")
+X2021_01_10 <- read_csv("data/2021-01-10.csv")
+
+y_2021_2022 <- list(X2021_12_05, X2021_09_07, X2021_06_03, X2021_03_04, X2021_02_10, X2021_01_10)
+cleaned_2021_2022 <- clean_and_combine(y_2021_2022)
+
+X2020_12_13 <- read_csv("data/2020-12-13.csv")
+X2020_11_03 <- read_csv("data/2020-11-03.csv")
+X2020_10_10 <- read_csv("data/2020-10-10.csv")
+X2020_09_10 <- read_csv("data/2020-09-10.csv")
+X2020_08_18 <- read_csv("data/2020-08-18.csv")
+X2020_07_10 <- read_csv("data/2020-07-10.csv")
+X2020_06_08 <- read_csv("data/2020-06-08.csv")
+X2020_05_08 <- read_csv("data/2020-05-08.csv")
+X2020_04_16 <- read_csv("data/2020-04-16.csv")
+X2020_03_13 <- read_csv("data/2020-03-13.csv")
+X2020_02_14 <- read_csv("data/2020-02-14.csv")
+X2020_01_05 <- read_csv("data/2020-01-05.csv")
+
+y_2020_2021 <- list(
+  X2020_12_13, X2020_11_03, X2020_10_10, X2020_09_10, 
+  X2020_08_18, X2020_07_10, X2020_06_08, X2020_05_08, 
+  X2020_04_16, X2020_03_13, X2020_02_14, X2020_01_05
+)
+
+cleaned_2020_2021 <- clean_and_combine(y_2020_2021)
+
+# 2019-2020
+X2019_10_15 <- read_csv("data/2019-10-15.csv")
+X2019_04_08 <- read_csv("data/2019-04-08.csv")
+y_2019_2020 <- list(X2019_10_15, X2019_04_08)
+cleaned_2019_2020 <- clean_and_combine(y_2019_2020)
+```
+
+Function for regression for every dataset
+
+```{r}
+# Run function for regression (Yara's algorithm for avg price regression taken from Dante)
+run_avg <- function(cleaned) {
+  reg_model <- lm(avg_price ~ month + is_weekend + month:is_weekend, data = cleaned)
+  return(summary(reg_model))
+}
+
+run_avg(cleaned_2024_2025)
+run_avg(cleaned_2023_2024)
+run_avg(cleaned_2022_2023)
+run_avg(cleaned_2021_2022)
+run_avg(cleaned_2020_2021)
+run_avg(cleaned_2019_2020)
+```
+
+
+Then let's do the same with panel data:
+First we create holidays function to generate holidays across 2019-2025 years
+
+```{r}
+#generate Dutch public holidays
+
+install.packages("timeDate")
+library(dplyr)
+library(lubridate)
+library(plm)
+library(timeDate)  # Required for calculating Easter Sunday: because this day is each year different. 
+
+# Function to generate Dutch public holidays for a given year
+dutch_holidays_for_year <- function(year) {
+  easter_sunday <- as.Date(Easter(year))  # Compute Easter Sunday
+  holidays <- as.Date(c(
+    paste0(year, "-01-01"), # New Year's Day
+    paste0(year, "-04-27"), # King's Day
+    easter_sunday + 1,      # Easter Monday
+    paste0(year, "-05-05"),
+    paste0(year, "-12-25"), # Christmas Day
+    paste0(year, "-12-26")  # Boxing Day
+  ))
+  return(holidays)
+}
+
+# Generate holidays for a range of years
+generate_dutch_holidays <- function(start_year, end_year) {
+  holidays <- unlist(lapply(start_year:end_year, dutch_holidays_for_year))
+  return(as.Date(holidays))
+}
+
+# Define holiday range dynamically
+dutch_holidays <- generate_dutch_holidays(2019, 2025)
+
+```
+
+Function for years 2019-2025:
+
+```{r}
+# Main function: Clean, combine, and process data
+clean_panel_data <- function(data_list, start_year, end_year) {
+  
+  # Generate Dutch holidays for the given year range
+  dutch_holidays <- generate_dutch_holidays(start_year, end_year)
+
+  # Data cleaning and transformation
+  combined_data <- data_list %>%
+    bind_rows() %>%
+    distinct() %>%
+    select(-any_of("adjusted_prices")) %>%
+    mutate(
+      price = as.numeric(gsub("\\$", "", price)),  # Remove $ sign
+      price = gsub(",", "", price),               # Remove commas
+      price = as.numeric(price),                  # Convert to numeric
+      date = as.Date(date),                        # Ensure date format
+      year_month_day = format(date, "%Y-%m-%d"),  # Extract year-month-day
+      is_weekend = wday(date, week_start = 1) >= 6, # Weekend indicator
+      is_holiday = date %in% dutch_holidays        # Holiday indicator
+    ) %>%
+    drop_na() %>%
+    mutate(
+      month_num = factor(month(date)),   # Extract month and convert to factor
+      year = year(date)                  # Extract year
+    ) %>%
+    group_by(listing_id, date, month_num, is_weekend, is_holiday) %>%
+    summarise(avg_price = mean(price, na.rm = TRUE), .groups = "drop")
+
+  # Convert to panel data format
+  pdata <- pdata.frame(combined_data, index = c("listing_id", "date"))
+
+  return(pdata)
+}
+```
+
+```{r}
+# Run the fnction for all the years: 
+pdata_2019_2020 <- clean_panel_data(y_2019_2020, 2019, 2020)
+pdata_2020_2021 <- clean_panel_data(y_2020_2021, 2020, 2021)
+pdata_2021_2022 <- clean_panel_data(y_2021_2022, 2021, 2022)
+pdata_2022_2023 <- clean_panel_data(y_2022_2023, 2022, 2023)
+pdata_2023_2024 <- clean_panel_data(y_2023_2024, 2023, 2024)
+pdata_2024_2025 <- clean_panel_data(y_2024_2025, 2024, 2025)
+```
+
+```{r}
+y_2019_2025 <- bind_rows(y_2019_2020, y_2020_2021,  y_2021_2022,  y_2022_2023,  y_2023_2024,  y_2024_2025)
+pdata_2019_2025 <- clean_panel_data(y_2019_2025, 2019, 2025) ## this is under question for Dante
+```
+
+Now regression for panel data:
+
+```{r}
+# Run panel regression (only needed for separate datasets, under question)
+run_p_reg <- function(pdata) {
+  panel_model <- plm(avg_price ~ month_num:is_weekend + month_num + is_weekend + is_holiday, 
+                     data = pdata, model = "within")
+  return(summary(panel_model))
+}
+
+# Example usage:
+run_p_reg(pdata_2025_2024)
+run_p_reg(pdata_2023_2024)
+run_p_reg(pdata_2022_2023)
+run_p_reg(pdata_2021_2022)
+run_p_reg(pdata_2020_2021)
+run_p_reg(pdata_2019_2020)
+```
+
